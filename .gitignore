@@ -1,0 +1,23 @@
+# Build artifacts
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/sdkconfig.bak
+desktop/windows/build*/
+*.o
+*.obj
+*.elf
+*.bin
+*.map
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temp files
+temp_*/
+*.log
+*.bat
+*.output

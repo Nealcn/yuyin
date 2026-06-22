@@ -1,0 +1,165 @@
+# Opus codec component - source listing for embedded build
+set(OPUS_SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/opus_src")
+
+if(NOT EXISTS ${OPUS_SRC_DIR}/src/opus.c)
+    message(FATAL_ERROR "opus source not found at ${OPUS_SRC_DIR}/src/opus.c")
+endif()
+
+set(OPUS_ALL_SRCS
+    ${OPUS_SRC_DIR}/celt/bands.c
+    ${OPUS_SRC_DIR}/celt/celt.c
+    ${OPUS_SRC_DIR}/celt/celt_encoder.c
+    ${OPUS_SRC_DIR}/celt/celt_decoder.c
+    ${OPUS_SRC_DIR}/celt/cwrs.c
+    ${OPUS_SRC_DIR}/celt/entcode.c
+    ${OPUS_SRC_DIR}/celt/entdec.c
+    ${OPUS_SRC_DIR}/celt/entenc.c
+    ${OPUS_SRC_DIR}/celt/kiss_fft.c
+    ${OPUS_SRC_DIR}/celt/laplace.c
+    ${OPUS_SRC_DIR}/celt/mathops.c
+    ${OPUS_SRC_DIR}/celt/mdct.c
+    ${OPUS_SRC_DIR}/celt/modes.c
+    ${OPUS_SRC_DIR}/celt/pitch.c
+    ${OPUS_SRC_DIR}/celt/celt_lpc.c
+    ${OPUS_SRC_DIR}/celt/quant_bands.c
+    ${OPUS_SRC_DIR}/celt/rate.c
+    ${OPUS_SRC_DIR}/celt/vq.c
+    ${OPUS_SRC_DIR}/silk/CNG.c
+    ${OPUS_SRC_DIR}/silk/code_signs.c
+    ${OPUS_SRC_DIR}/silk/init_decoder.c
+    ${OPUS_SRC_DIR}/silk/decode_core.c
+    ${OPUS_SRC_DIR}/silk/decode_frame.c
+    ${OPUS_SRC_DIR}/silk/decode_parameters.c
+    ${OPUS_SRC_DIR}/silk/decode_indices.c
+    ${OPUS_SRC_DIR}/silk/decode_pulses.c
+    ${OPUS_SRC_DIR}/silk/decoder_set_fs.c
+    ${OPUS_SRC_DIR}/silk/dec_API.c
+    ${OPUS_SRC_DIR}/silk/enc_API.c
+    ${OPUS_SRC_DIR}/silk/encode_indices.c
+    ${OPUS_SRC_DIR}/silk/encode_pulses.c
+    ${OPUS_SRC_DIR}/silk/gain_quant.c
+    ${OPUS_SRC_DIR}/silk/interpolate.c
+    ${OPUS_SRC_DIR}/silk/LP_variable_cutoff.c
+    ${OPUS_SRC_DIR}/silk/NLSF_decode.c
+    ${OPUS_SRC_DIR}/silk/NSQ.c
+    ${OPUS_SRC_DIR}/silk/NSQ_del_dec.c
+    ${OPUS_SRC_DIR}/silk/PLC.c
+    ${OPUS_SRC_DIR}/silk/shell_coder.c
+    ${OPUS_SRC_DIR}/silk/tables_gain.c
+    ${OPUS_SRC_DIR}/silk/tables_LTP.c
+    ${OPUS_SRC_DIR}/silk/tables_NLSF_CB_NB_MB.c
+    ${OPUS_SRC_DIR}/silk/tables_NLSF_CB_WB.c
+    ${OPUS_SRC_DIR}/silk/tables_other.c
+    ${OPUS_SRC_DIR}/silk/tables_pitch_lag.c
+    ${OPUS_SRC_DIR}/silk/tables_pulses_per_block.c
+    ${OPUS_SRC_DIR}/silk/VAD.c
+    ${OPUS_SRC_DIR}/silk/control_audio_bandwidth.c
+    ${OPUS_SRC_DIR}/silk/quant_LTP_gains.c
+    ${OPUS_SRC_DIR}/silk/VQ_WMat_EC.c
+    ${OPUS_SRC_DIR}/silk/HP_variable_cutoff.c
+    ${OPUS_SRC_DIR}/silk/NLSF_encode.c
+    ${OPUS_SRC_DIR}/silk/NLSF_VQ.c
+    ${OPUS_SRC_DIR}/silk/NLSF_unpack.c
+    ${OPUS_SRC_DIR}/silk/NLSF_del_dec_quant.c
+    ${OPUS_SRC_DIR}/silk/process_NLSFs.c
+    ${OPUS_SRC_DIR}/silk/stereo_LR_to_MS.c
+    ${OPUS_SRC_DIR}/silk/stereo_MS_to_LR.c
+    ${OPUS_SRC_DIR}/silk/check_control_input.c
+    ${OPUS_SRC_DIR}/silk/control_SNR.c
+    ${OPUS_SRC_DIR}/silk/init_encoder.c
+    ${OPUS_SRC_DIR}/silk/control_codec.c
+    ${OPUS_SRC_DIR}/silk/A2NLSF.c
+    ${OPUS_SRC_DIR}/silk/ana_filt_bank_1.c
+    ${OPUS_SRC_DIR}/silk/biquad_alt.c
+    ${OPUS_SRC_DIR}/silk/bwexpander_32.c
+    ${OPUS_SRC_DIR}/silk/bwexpander.c
+    ${OPUS_SRC_DIR}/silk/debug.c
+    ${OPUS_SRC_DIR}/silk/decode_pitch.c
+    ${OPUS_SRC_DIR}/silk/inner_prod_aligned.c
+    ${OPUS_SRC_DIR}/silk/lin2log.c
+    ${OPUS_SRC_DIR}/silk/log2lin.c
+    ${OPUS_SRC_DIR}/silk/LPC_analysis_filter.c
+    ${OPUS_SRC_DIR}/silk/LPC_inv_pred_gain.c
+    ${OPUS_SRC_DIR}/silk/table_LSF_cos.c
+    ${OPUS_SRC_DIR}/silk/NLSF2A.c
+    ${OPUS_SRC_DIR}/silk/NLSF_stabilize.c
+    ${OPUS_SRC_DIR}/silk/NLSF_VQ_weights_laroia.c
+    ${OPUS_SRC_DIR}/silk/pitch_est_tables.c
+    ${OPUS_SRC_DIR}/silk/resampler.c
+    ${OPUS_SRC_DIR}/silk/resampler_down2_3.c
+    ${OPUS_SRC_DIR}/silk/resampler_down2.c
+    ${OPUS_SRC_DIR}/silk/resampler_private_AR2.c
+    ${OPUS_SRC_DIR}/silk/resampler_private_down_FIR.c
+    ${OPUS_SRC_DIR}/silk/resampler_private_IIR_FIR.c
+    ${OPUS_SRC_DIR}/silk/resampler_private_up2_HQ.c
+    ${OPUS_SRC_DIR}/silk/resampler_rom.c
+    ${OPUS_SRC_DIR}/silk/sigm_Q15.c
+    ${OPUS_SRC_DIR}/silk/sort.c
+    ${OPUS_SRC_DIR}/silk/sum_sqr_shift.c
+    ${OPUS_SRC_DIR}/silk/stereo_decode_pred.c
+    ${OPUS_SRC_DIR}/silk/stereo_encode_pred.c
+    ${OPUS_SRC_DIR}/silk/stereo_find_predictor.c
+    ${OPUS_SRC_DIR}/silk/stereo_quant_pred.c
+    ${OPUS_SRC_DIR}/silk/LPC_fit.c
+    ${OPUS_SRC_DIR}/silk/fixed/LTP_analysis_filter_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/LTP_scale_ctrl_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/corrMatrix_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/encode_frame_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/find_LPC_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/find_LTP_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/find_pitch_lags_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/find_pred_coefs_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/noise_shape_analysis_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/process_gains_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/regularize_correlations_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/residual_energy16_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/residual_energy_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/warped_autocorrelation_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/apply_sine_window_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/autocorr_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/burg_modified_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/k2a_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/k2a_Q16_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/pitch_analysis_core_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/vector_ops_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/schur64_FIX.c
+    ${OPUS_SRC_DIR}/silk/fixed/schur_FIX.c
+    ${OPUS_SRC_DIR}/src/opus.c
+    ${OPUS_SRC_DIR}/src/opus_decoder.c
+    ${OPUS_SRC_DIR}/src/opus_encoder.c
+    ${OPUS_SRC_DIR}/src/opus_multistream.c
+    ${OPUS_SRC_DIR}/src/opus_multistream_encoder.c
+    ${OPUS_SRC_DIR}/src/opus_multistream_decoder.c
+    ${OPUS_SRC_DIR}/src/repacketizer.c
+    ${OPUS_SRC_DIR}/src/opus_projection_encoder.c
+    ${OPUS_SRC_DIR}/src/opus_projection_decoder.c
+    ${OPUS_SRC_DIR}/src/mapping_matrix.c
+    ${OPUS_SRC_DIR}/src/analysis.c
+    ${OPUS_SRC_DIR}/src/mlp.c
+    ${OPUS_SRC_DIR}/src/mlp_data.c
+)
+
+idf_component_register(
+    SRCS ${OPUS_ALL_SRCS}
+    INCLUDE_DIRS
+        "${OPUS_SRC_DIR}/include"
+        "${OPUS_SRC_DIR}/celt"
+        "${OPUS_SRC_DIR}/silk"
+        "${OPUS_SRC_DIR}/silk/float"
+        "${OPUS_SRC_DIR}/silk/fixed"
+)
+
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    OPUS_BUILD
+    USE_ALLOCA
+    FIXED_POINT
+    HAVE_LRINT
+    HAVE_LRINTF
+)
+target_compile_options(${COMPONENT_LIB} PRIVATE
+    -Wno-error=cpp
+    -Wno-unused-variable
+    -Wno-unused-but-set-variable
+    -Wno-sign-compare
+    -Wno-stringop-overread
+)

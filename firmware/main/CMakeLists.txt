@@ -1,0 +1,18 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "pdm_mic.c"
+        "opus_encoder.c"
+        "ble_service.c"
+        "led_matrix.c"
+        "button.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        driver
+        esp_timer
+        nvs_flash
+        efuse
+        bt
+        opus
+)

@@ -1,0 +1,16 @@
+Command: ninja all
+C:\Users\Administrator\AppData\Local\Temp\kconfgen_tmpmdve_nd8:49: warning: malformed string literal in assignment to ESPTOOLPY_FLASHSIZE (defined at D:/esp-idf/components/esptool_py/Kconfig.projbuild:136). Assignment ignored.
+Traceback (most recent call last):
+  File "D:\esp-idf\components\esp_rom\gen_gdbinit.py", line 72, in <module>
+    gdbinit_lines = generate_gdbinit_rom_add_symbols(target)
+  File "D:\esp-idf\components\esp_rom\gen_gdbinit.py", line 32, in generate_gdbinit_rom_add_symbols
+    raise EnvironmentError(
+OSError: ESP_ROM_ELF_DIR environment variable is not defined. Please try to run IDF "install" and "export" scripts.
+CMake Warning at D:/esp-idf/tools/cmake/gdbinit.cmake:52 (message):
+  Error while generating esp_rom gdbinit
+Call Stack (most recent call first):
+  D:/esp-idf/tools/cmake/project.cmake:356 (__generate_gdbinit)
+  D:/esp-idf/tools/cmake/project.cmake:979 (__project_info)
+  CMakeLists.txt:10 (project)
+
+
