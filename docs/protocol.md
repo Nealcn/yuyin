@@ -1,23 +1,25 @@
-# Voice Stick BLE Protocol — AtomS3 Variant
+# Voice Stick BLE 协议 — AtomS3R 实现
 
-Fully compatible with [78/voicestick protocol](https://github.com/78/voicestick/blob/main/docs/protocol.md).
+与 [78/voicestick](https://github.com/78/voicestick/blob/main/docs/protocol.md) 协议兼容。
 
-## GATT Service
+## BLE GATT
 
-Device name: `VS-XXXX` (last 2 bytes of MAC)
+设备名：`VS-XXXX`（基于 MAC 地址后 2 字节）
 
-| Service/Char | UUID | Direction | Properties |
+| Service/Char | UUID | 方向 | 属性 |
 |---|---|---|---|
 | Voice Stick Service | `8f2f0b84-6e6f-4b23-88f7-3a3ceafc5100` | — | — |
-| audio_tx | `...5101` | AtomS3 → Windows | notify |
-| state_tx | `...5102` | AtomS3 → Windows | notify |
-| control_rx | `...5103` | Windows → AtomS3 | write without response |
+| audio_tx | `...5101` | AtomS3R → Windows | notify |
+| state_tx | `...5102` | AtomS3R → Windows | notify |
+| control_rx | `...5103` | Windows → AtomS3R | write without response |
 
-## Audio Frame
+协议栈：**NimBLE**（ESP-IDF v5.5 内置）
 
-Packed little-endian binary:
+## 音频帧
 
-```
+小端序打包结构：
+
+```c
 struct AudioBleFrame {
   uint8_t  version;    // 1
   uint8_t  type;       // 0x01
@@ -31,12 +33,13 @@ struct AudioBleFrame {
 }
 ```
 
-- 60ms Opus frames at 16 kHz / 16-bit mono
-- Bitrate target: ~28 kbps (VBR)
+- 60ms Opus 帧，16kHz / 16-bit 单声道
+- 码率：~28 kbps VBR
+- 编码器：`OPUS_APPLICATION_AUDIO`，复杂度 5
 
-## State Events (JSON over state_tx)
+## 状态事件（JSON，通过 state_tx）
 
-Button events (single button maps to "primary"):
+按键事件（单按键映射为 "primary"，双击映射为 "secondary"）：
 
 ```json
 {"event":"button_down","button":"primary","session_id":1234}
@@ -45,9 +48,7 @@ Button events (single button maps to "primary"):
 {"event":"button_up","button":"secondary","duration_ms":90,"session_id":0}
 ```
 
-Double-click sends as secondary button click (for cancel action).
-
-## Control Events (JSON over control_rx, from Windows)
+## 控制命令（JSON，从 Windows 通过 control_rx 写入）
 
 ```json
 {"event":"ui_state","state":"ready","text":""}
@@ -57,13 +58,16 @@ Double-click sends as secondary button click (for cancel action).
 {"event":"ui_state","state":"error","text":"ASR timeout"}
 ```
 
-## Differences from voicestick
+## 与原始 voicestick 的差异
 
-| Feature | StickS3 (original) | AtomS3 (this project) |
-|---|---|---|
-| Audio source | ES8311 I2S codec | MSM261DCM PDM mic (built-in) |
-| Display | ST7789 LCD (240×135) | 5×5 RGB LED matrix |
-| Buttons | Front (GPIO11) + Side (GPIO12) | Single button (GPIO39) |
-| Double-click | Separate physical button | Double-click on single button |
-| Battery | AXP2101 PMIC | USB powered only |
-| OTA | Supported | Future |
+| 项目 | StickS3（原始） | AtomS3R（本实现） |
+|------|----------------|-------------------|
+| 主控 | ESP32-S3 | ESP32-S3-PICO |
+| PSRAM | 无 | **8MB** |
+| 音频输入 | ES8311 I2S 编解码器 | 板载 **PDM 麦克风**（MSM261DCM） |
+| 显示 | ST7789 LCD 240×135 | **GC9107** 128×128 彩色 IPS LCD |
+| 背光 | GPIO 直控 | **LP5562** I²C 驱动 |
+| 按键 | 正面+侧面 2 个 | **单按键**（双击=取消） |
+| 电池 | AXP2101 PMIC | USB 供电（无电池） |
+| BLE 协议栈 | Bluedroid | **NimBLE** |
+| OTA | 支持 | 未实现 |

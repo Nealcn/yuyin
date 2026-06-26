@@ -4,8 +4,9 @@ idf_component_register(
         "pdm_mic.c"
         "opus_encoder.c"
         "ble_service.c"
-        "led_matrix.c"
+        "display.c"
         "button.c"
+        "es8311_codec.c"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -15,4 +16,8 @@ idf_component_register(
         efuse
         bt
         opus
+        esp_lcd
+        esp_mm
+        esp_driver_spi
+        esp_driver_i2c
 )

@@ -32,7 +32,7 @@
 #include "pdm_mic.h"
 #include "opus_encoder.h"
 #include "ble_service.h"
-#include "led_matrix.h"
+#include "display.h"
 #include "button.h"
 
 static const char *TAG = "atom_voicestick";
@@ -56,6 +56,43 @@ static int16_t *s_pcm_buffer = NULL;
 static size_t s_pcm_count = 0;
 static size_t s_pcm_capacity = 0;
 
+// Recording wall-clock start (for toggle-mode duration check)
+static int64_t s_rec_start_us = 0;
+
+// Timeout timer for WAITING_ASR state (prevents permanent hang)
+static esp_timer_handle_t s_asr_timeout_timer = NULL;
+#define ASR_TIMEOUT_MS 15000  // 15 seconds
+
+// Forward declarations
+static void set_state(app_state_t new_state);
+static void stop_asr_timeout(void);
+static void start_asr_timeout(void);
+
+static void asr_timeout_cb(void *arg)
+{
+    (void)arg;
+    if (s_state == APP_STATE_WAITING_ASR || s_state == APP_STATE_COMPLETE) {
+        ESP_LOGW(TAG, "ASR timeout: returning to IDLE");
+        set_state(APP_STATE_IDLE);
+        display_set_state(DISP_STATE_IDLE);
+    }
+}
+
+static void start_asr_timeout(void)
+{
+    if (s_asr_timeout_timer) {
+        esp_timer_stop(s_asr_timeout_timer);
+        esp_timer_start_once(s_asr_timeout_timer, ASR_TIMEOUT_MS * 1000);
+    }
+}
+
+static void stop_asr_timeout(void)
+{
+    if (s_asr_timeout_timer) {
+        esp_timer_stop(s_asr_timeout_timer);
+    }
+}
+
 // ---- State name helper ----
 static const char *state_name(app_state_t state)
 {
@@ -72,7 +109,7 @@ static const char *state_name(app_state_t state)
 static void set_state(app_state_t new_state)
 {
     if (s_state != new_state) {
-        ESP_LOGI(TAG, "state: %s → %s", state_name(s_state), state_name(new_state));
+        ESP_LOGI(TAG, "APP state: %s → %s", state_name(s_state), state_name(new_state));
         s_state = new_state;
     }
 }
@@ -82,6 +119,10 @@ static void on_pcm_data(const int16_t *data, size_t samples, uint32_t session_id
 {
     if (s_state != APP_STATE_RECORDING) {
         return;
+    }
+
+    if (s_pcm_count == 0) {
+        ESP_LOGI(TAG, "!!! PCM data arriving: %u samples, session=%u", (unsigned)samples, session_id);
     }
 
     // Accumulate PCM samples
@@ -98,7 +139,7 @@ static void on_pcm_data(const int16_t *data, size_t samples, uint32_t session_id
     size_t frame_samples = audio_encoder_frame_samples();
     while (s_pcm_count >= frame_samples) {
         // Encode to Opus
-        uint8_t opus_data[400]; // Max Opus frame size
+        static uint8_t opus_data[400]; // Max Opus frame size (BSS, not stack)
         size_t opus_len = 0;
 
         esp_err_t err = audio_encode_frame(s_pcm_buffer, frame_samples,
@@ -172,6 +213,7 @@ static void start_recording(void)
     s_seq = 0;
     s_pcm_count = 0;
     s_asr_success = false;
+    s_rec_start_us = esp_timer_get_time();
 
     // Allocate PCM buffer (enough for 2 seconds worst-case accumulation)
     size_t max_samples = BOARD_AUDIO_SAMPLE_RATE * 2; // 2 seconds @ 16kHz
@@ -179,28 +221,29 @@ static void start_recording(void)
         s_pcm_buffer = malloc(max_samples * sizeof(int16_t));
         if (!s_pcm_buffer) {
             ESP_LOGE(TAG, "failed to allocate PCM buffer");
-            led_matrix_set_state(LED_STATE_ERROR);
+            display_set_state(DISP_STATE_ERROR);
             return;
         }
         s_pcm_capacity = max_samples;
     }
 
+    // DIAG: record without mic — if screen stays RED then PDM init is the issue
     esp_err_t err = pdm_mic_start(s_session_id);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "PDM start failed: %s", esp_err_to_name(err));
-        led_matrix_set_state(LED_STATE_ERROR);
-        return;
+        ESP_LOGE(TAG, "PDM start failed: %s — continuing without mic for diag", esp_err_to_name(err));
     }
 
     // Reset Opus encoder for new session
     audio_encoder_reset();
 
     set_state(APP_STATE_RECORDING);
-    led_matrix_set_state(LED_STATE_RECORDING);
+    display_set_state(DISP_STATE_RECORDING);
 
-    send_button_down("primary", s_session_id);
+    // BLE notify (non-critical)
+    ble_service_send_state("{\"event\":\"button_down\",\"button\":\"primary\"}");
 
-    ESP_LOGI(TAG, "recording started: session=%u", s_session_id);
+    ESP_LOGI(TAG, "recording started: session=%u (PDM=%s)", s_session_id,
+             err == ESP_OK ? "ok" : "FAIL");
 }
 
 // ---- Stop recording and send audio ----
@@ -210,7 +253,8 @@ static void stop_recording(void)
         return;
     }
 
-    uint32_t duration_ms = button_get_press_duration_ms();
+    // Use wall-clock recording duration (not button press duration)
+    uint32_t duration_ms = (uint32_t)((esp_timer_get_time() - s_rec_start_us) / 1000);
     uint32_t session = s_session_id;
 
     // Stop PDM capture
@@ -242,18 +286,10 @@ static void stop_recording(void)
     // Send button up event
     send_button_up("primary", duration_ms, session);
 
-    // Only discard if recording was very short (< 0.5s, voicestick convention)
-    if (duration_ms < 500) {
-        ESP_LOGI(TAG, "recording too short (%u ms), discarding", duration_ms);
-        set_state(APP_STATE_IDLE);
-        led_matrix_set_state(LED_STATE_IDLE);
-        s_pcm_count = 0;
-        return;
-    }
-
     // Wait for ASR result from Windows side
     set_state(APP_STATE_WAITING_ASR);
-    led_matrix_set_state(LED_STATE_THINKING);
+    display_set_state(DISP_STATE_THINKING);
+    start_asr_timeout();
 
     ESP_LOGI(TAG, "recording stopped: session=%u, duration=%u ms", session, duration_ms);
 }
@@ -267,45 +303,50 @@ static void cancel_action(void)
         ESP_LOGI(TAG, "recording cancelled");
     } else if (s_state == APP_STATE_WAITING_ASR) {
         ESP_LOGI(TAG, "ASR waiting cancelled");
+        stop_asr_timeout();
     }
 
     // Send cancel event (as secondary button click in voicestick protocol)
     send_button_click("secondary", 0, 0);
 
     set_state(APP_STATE_IDLE);
-    led_matrix_set_state(LED_STATE_CANCELLED);
+    display_set_state(DISP_STATE_CANCELLED);
 }
 
-// ---- Button callback ----
+// ---- Button callback (toggle mode: press to start, press again to stop) ----
 static void on_button_event(button_event_t event, uint32_t duration_ms)
 {
     (void)duration_ms;
 
     switch (event) {
     case BUTTON_EVENT_PRESS_DOWN:
-        if (s_state == APP_STATE_IDLE) {
+        ESP_LOGI(TAG, "btn down state=%s", state_name(s_state));
+        // Toggle mode: each press advances to next state
+        switch (s_state) {
+        case APP_STATE_IDLE:
+        case APP_STATE_ADVERTISING:
             start_recording();
+            break;
+        case APP_STATE_RECORDING:
+            stop_recording();
+            break;
+        case APP_STATE_WAITING_ASR:
+        case APP_STATE_COMPLETE:
+            stop_asr_timeout();
+            pdm_mic_stop();
+            s_pcm_count = 0;
+            set_state(APP_STATE_IDLE);
+            display_set_state(DISP_STATE_IDLE);
+            break;
+        default:
+            break;
         }
-        // In other states, press is ignored (handled on release or double-click)
         break;
 
     case BUTTON_EVENT_PRESS_UP:
-        // This is only fired for single press (double-click timer expired)
-        if (s_state == APP_STATE_RECORDING) {
-            stop_recording();
-        }
-        break;
-
     case BUTTON_EVENT_DOUBLE_CLICK:
-        // Cancel whatever we're doing
-        if (s_state == APP_STATE_RECORDING || s_state == APP_STATE_WAITING_ASR) {
-            cancel_action();
-        }
-        break;
-
     case BUTTON_EVENT_LONG_PRESS:
-        // Reserved for future use (e.g., mode toggle, deep sleep)
-        ESP_LOGI(TAG, "long press: %u ms (reserved)", duration_ms);
+        // Not used in toggle mode
         break;
     }
 }
@@ -320,18 +361,21 @@ static void on_ble_control(const char *json)
     // We use this to know when ASR completes
     if (strstr(json, "ui_state")) {
         if (strstr(json, "\"state\":\"ready\"")) {
+            stop_asr_timeout();
             if (s_state == APP_STATE_WAITING_ASR || s_state == APP_STATE_COMPLETE) {
                 set_state(APP_STATE_IDLE);
-                led_matrix_set_state(LED_STATE_IDLE);
+                display_set_state(DISP_STATE_IDLE);
             }
         } else if (strstr(json, "\"state\":\"pending_confirmation\"")) {
+            stop_asr_timeout();
             // ASR result received and ready to paste
             if (s_state == APP_STATE_WAITING_ASR) {
                 set_state(APP_STATE_COMPLETE);
-                led_matrix_set_state(LED_STATE_CONFIRMED);
+                display_set_state(DISP_STATE_CONFIRMED);
             }
         } else if (strstr(json, "\"state\":\"error\"")) {
-            led_matrix_set_state(LED_STATE_ERROR);
+            stop_asr_timeout();
+            display_set_state(DISP_STATE_ERROR);
             // Return to idle after a moment
             set_state(APP_STATE_IDLE);
         }
@@ -366,11 +410,25 @@ void app_main(void)
         ble_service_set_control_callback(on_ble_control);
     }
 
-    // Initialize LED matrix (visual feedback)
-    ESP_ERROR_CHECK(led_matrix_init());
-    led_matrix_set_state(LED_STATE_IDLE);
+    // Create ASR timeout timer
+    esp_timer_create_args_t timer_args = {
+        .callback = asr_timeout_cb,
+        .name = "asr_timeout"
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_asr_timeout_timer));
 
-    // Initialize Opus encoder
+    // Initialize LED matrix (visual feedback)
+    ESP_ERROR_CHECK(display_init());
+    display_set_state(DISP_STATE_IDLE);
+
+    // Initialize PDM microphone FIRST (before Opus to avoid heap corruption)
+    ESP_LOGI(TAG, "Initializing PDM mic...");
+    esp_err_t pdm_err = pdm_mic_init(on_pcm_data);
+    if (pdm_err != ESP_OK) {
+        ESP_LOGE(TAG, "PDM mic init failed: %s", esp_err_to_name(pdm_err));
+    }
+
+    // Initialize Opus encoder (now uses internal RAM to avoid PSRAM issue)
     ESP_LOGI(TAG, "Initializing Opus encoder...");
     esp_err_t opus_err = audio_encoder_init(
         BOARD_AUDIO_SAMPLE_RATE,
@@ -378,31 +436,22 @@ void app_main(void)
         BOARD_AUDIO_FRAME_MS
     );
     if (opus_err != ESP_OK) {
-        ESP_LOGW(TAG, "Opus init failed: %s, continuing without audio encoding", esp_err_to_name(opus_err));
-    }
-
-    // Initialize PDM microphone
-    esp_err_t pdm_err = pdm_mic_init(on_pcm_data);
-    if (pdm_err != ESP_OK) {
-        ESP_LOGE(TAG, "PDM mic init failed: %s", esp_err_to_name(pdm_err));
+        ESP_LOGW(TAG, "Opus init failed: %s, continuing without encoding", esp_err_to_name(opus_err));
     }
     // Note: pdm_mic is started/stopped per recording session
 
     // Initialize button
     ESP_ERROR_CHECK(button_init(on_button_event));
 
-    // Create PDM read task (blocking I2S reads need dedicated task)
-    // We start it in pdm_mic.c's design - the read loop is inside pdm_mic.c
-    // which gets called when pdm_mic_start() is invoked.
-    // For I2S PDM, we spawn the read task here.
+    ESP_LOGI(TAG, "creating PDM read task...");
     extern void pdm_mic_read_task(void *arg);
-    BaseType_t task_ok = xTaskCreate(pdm_mic_read_task, "pdm_read", 4096, NULL, 6, NULL);
+    BaseType_t task_ok = xTaskCreate(pdm_mic_read_task, "pdm_read", 32768, NULL, 6, NULL);
     if (task_ok != pdPASS) {
         ESP_LOGE(TAG, "failed to create PDM read task");
     }
 
     set_state(APP_STATE_ADVERTISING);
-    led_matrix_set_state(LED_STATE_IDLE);
+    display_set_state(DISP_STATE_IDLE);
 
     ESP_LOGI(TAG, "===== M5AtomS3 Voice Stick ready =====");
     ESP_LOGI(TAG, "Device: %s", ble_service_device_name());

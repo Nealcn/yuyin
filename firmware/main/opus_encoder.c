@@ -2,6 +2,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 
 #include "opus.h"
 #include "opus_encoder.h"
@@ -28,20 +29,43 @@ esp_err_t audio_encoder_init(uint32_t sample_rate, uint8_t channels, uint32_t fr
     s_frame_ms = frame_ms;
     s_frame_samples = (sample_rate * frame_ms) / 1000;
 
-    int opus_err;
-    s_encoder = opus_encoder_create(sample_rate, channels, OPUS_APPLICATION_AUDIO, &opus_err);
-    if (opus_err != OPUS_OK) {
-        s_encoder = NULL;
-        ESP_LOGE(TAG, "opus_encoder_create failed: %d", opus_err);
+    ESP_LOGI(TAG, "Getting encoder size...");
+    int enc_size = opus_encoder_get_size(channels);
+    ESP_LOGI(TAG, "Encoder size: %d bytes", enc_size);
+
+    ESP_LOGI(TAG, "Allocating %d bytes from internal RAM...", enc_size);
+    OpusEncoder *enc = (OpusEncoder *)heap_caps_calloc(1, enc_size, MALLOC_CAP_INTERNAL);
+    ESP_LOGI(TAG, "Allocated at %p", enc);
+    if (!enc) {
+        ESP_LOGE(TAG, "heap_caps_calloc failed (trying PSRAM)...");
+        enc = (OpusEncoder *)heap_caps_calloc(1, enc_size, MALLOC_CAP_SPIRAM);
+        ESP_LOGI(TAG, "PSRAM alloc at %p", enc);
+    }
+    if (!enc) {
+        ESP_LOGE(TAG, "all memory allocation failed");
         return ESP_ERR_NO_MEM;
     }
 
+    ESP_LOGI(TAG, "Calling opus_encoder_init...");
+    int opus_err = opus_encoder_init(enc, sample_rate, channels, OPUS_APPLICATION_AUDIO);
+    ESP_LOGI(TAG, "opus_encoder_init returned: %d", opus_err);
+    if (opus_err != OPUS_OK) {
+        free(enc);
+        ESP_LOGE(TAG, "opus_encoder_init failed: %d", opus_err);
+        return ESP_ERR_NO_MEM;
+    }
+    s_encoder = enc;
+
+    ESP_LOGI(TAG, "Configuring encoder...");
     opus_encoder_ctl(s_encoder, OPUS_SET_BITRATE(OPUS_BITRATE));
-    opus_encoder_ctl(s_encoder, OPUS_SET_COMPLEXITY(5));
+    ESP_LOGI(TAG, "Set bitrate done");
+    opus_encoder_ctl(s_encoder, OPUS_SET_COMPLEXITY(0));
+    ESP_LOGI(TAG, "Set complexity done");
     opus_encoder_ctl(s_encoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE));
     opus_encoder_ctl(s_encoder, OPUS_SET_VBR(1));
     opus_encoder_ctl(s_encoder, OPUS_SET_INBAND_FEC(0));
     opus_encoder_ctl(s_encoder, OPUS_SET_PACKET_LOSS_PERC(0));
+    ESP_LOGI(TAG, "Encoder configured");
 
     ESP_LOGI(TAG, "Opus encoder initialized: %d Hz, %d ch, %d ms, %d bps",
              sample_rate, channels, frame_ms, OPUS_BITRATE);

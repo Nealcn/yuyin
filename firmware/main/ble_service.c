@@ -66,7 +66,7 @@ static const struct ble_gatt_svc_def s_gatt_svcs[] = {
             // control_rx (write without response)
             .uuid = &s_chr_control_rx.u,
             .access_cb = ble_svc_access_cb,
-            .flags = BLE_GATT_CHR_F_WRITE,
+            .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
             .arg = (void *)3,
         }, {
             0, // terminator
@@ -184,10 +184,9 @@ static int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
         break;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
-        if (event->subscribe.attr_handle == s_audio_attr_handle) {
-            ESP_LOGI(TAG, "audio_tx subscribe cur=%d prev=%d",
-                     event->subscribe.cur_notify, event->subscribe.prev_notify);
-        }
+        ESP_LOGI(TAG, "subscribe handle=%d cur=%d prev=%d",
+                 event->subscribe.attr_handle,
+                 event->subscribe.cur_notify, event->subscribe.prev_notify);
         break;
 
     default:
@@ -199,6 +198,13 @@ static int ble_gap_event_cb(struct ble_gap_event *event, void *arg)
 // ---- NimBLE sync callback (called when host syncs with controller) ----
 static void ble_sync_cb(void)
 {
+    // GATT handles are now assigned; look up notification handles
+    int rc;
+    rc = ble_gatts_find_chr(&s_svc_uuid.u, &s_chr_audio_tx.u, NULL, &s_audio_attr_handle);
+    if (rc != 0) ESP_LOGW(TAG, "audio_tx handle lookup: %d", rc);
+    rc = ble_gatts_find_chr(&s_svc_uuid.u, &s_chr_state_tx.u, NULL, &s_state_attr_handle);
+    if (rc != 0) ESP_LOGW(TAG, "state_tx handle lookup: %d", rc);
+    ESP_LOGI(TAG, "handles: audio=%d state=%d", s_audio_attr_handle, s_state_attr_handle);
     ESP_LOGI(TAG, "BLE host synced with controller");
     start_advertising();
 }
@@ -283,6 +289,9 @@ esp_err_t ble_service_send_audio(const uint8_t *data, uint16_t len,
     if (!s_connected) {
         return ESP_ERR_INVALID_STATE;
     }
+
+    ESP_LOGI(TAG, "send audio: session=%u seq=%u flags=0x%x len=%u",
+             session_id, seq, flags, len);
 
     // Build audio frame
     uint16_t frame_size = AUDIO_FRAME_HEADER_SIZE + len;

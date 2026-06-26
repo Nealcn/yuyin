@@ -6,7 +6,9 @@
 #include "resource.h"
 
 #include <Shellapi.h>
+#ifdef HAVE_WINSPARKLE
 #include <winsparkle.h>
+#endif
 #include <winrt/base.h>
 
 #include <algorithm>
@@ -151,12 +153,14 @@ int Win32App::Run() {
         RegisterTaskbarMessage();
         AddTrayIcon();
 
+#ifdef HAVE_WINSPARKLE
         LogLine("Initializing WinSparkle");
         win_sparkle_set_appcast_url(VOICESTICK_APPCAST_URL);
         win_sparkle_set_automatic_check_for_updates(1);
         win_sparkle_set_update_check_interval(86400);
         win_sparkle_init();
         LogLine("WinSparkle initialized");
+#endif
 
         LogLine("Creating BLE coordinator");
         auto ble = std::make_unique<BleCentralWin>(config_.paired_device_ids, hwnd_);
@@ -186,7 +190,9 @@ int Win32App::Run() {
         if (!ShowOnboardingIfNeeded()) {
             LogLine("Onboarding did not complete; exiting");
             ShutdownAndQuit();
+#ifdef HAVE_WINSPARKLE
             win_sparkle_cleanup();
+#endif
             RemoveTrayIcon();
             return 0;
         }
@@ -197,7 +203,9 @@ int Win32App::Run() {
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+#ifdef HAVE_WINSPARKLE
         win_sparkle_cleanup();
+#endif
         RemoveTrayIcon();
         return static_cast<int>(message.wParam);
     } catch (const winrt::hresult_error& error) {
@@ -439,7 +447,9 @@ LRESULT Win32App::HandleMessage(UINT message, WPARAM w_param, LPARAM l_param) {
             ShowPairDeviceDialog();
             return 0;
         case kMenuCheckAppUpdates:
+#ifdef HAVE_WINSPARKLE
             win_sparkle_check_update_with_ui();
+#endif
             return 0;
         case kMenuHoldToTalk:
             config_.interaction_mode = InteractionMode::kHoldToTalk;

@@ -12,19 +12,39 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 include(FetchContent)
 
-FetchContent_Declare(
-    winsparkle
-    URL https://github.com/vslavik/winsparkle/releases/download/v0.9.2/WinSparkle-0.9.2.zip
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(winsparkle)
+# WinSparkle auto-update — optional, skip if download unavailable
+set(WINSPARKLE_LOCAL_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/winsparkle")
+set(HAVE_WINSPARKLE FALSE)
 
-add_library(winsparkle_lib SHARED IMPORTED GLOBAL)
-set_target_properties(winsparkle_lib PROPERTIES
-    IMPORTED_IMPLIB "${winsparkle_SOURCE_DIR}/x64/Release/WinSparkle.lib"
-    IMPORTED_LOCATION "${winsparkle_SOURCE_DIR}/x64/Release/WinSparkle.dll"
-    INTERFACE_INCLUDE_DIRECTORIES "${winsparkle_SOURCE_DIR}/include"
-)
+if(EXISTS "${WINSPARKLE_LOCAL_DIR}/include/winsparkle.h")
+    set(HAVE_WINSPARKLE TRUE)
+    message(STATUS "Using local WinSparkle at ${WINSPARKLE_LOCAL_DIR}")
+else()
+    # Try downloading; if network fails, continue without WinSparkle
+    set(WINSPARKLE_ZIP "${CMAKE_CURRENT_BINARY_DIR}/WinSparkle-0.9.2.zip")
+    file(DOWNLOAD "https://github.com/vslavik/winsparkle/releases/download/v0.9.2/WinSparkle-0.9.2.zip"
+         "${WINSPARKLE_ZIP}" STATUS winsparkle_dl_status TIMEOUT 30 SHOW_PROGRESS)
+    list(GET winsparkle_dl_status 0 winsparkle_dl_ok)
+    if(winsparkle_dl_ok EQUAL 0)
+        file(ARCHIVE_EXTRACT INPUT "${WINSPARKLE_ZIP}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/winsparkle_extracted")
+        set(HAVE_WINSPARKLE TRUE)
+        set(WINSPARKLE_LOCAL_DIR "${CMAKE_CURRENT_BINARY_DIR}/winsparkle_extracted")
+    endif()
+endif()
+
+if(HAVE_WINSPARKLE)
+    message(STATUS "WinSparkle found at ${WINSPARKLE_LOCAL_DIR}")
+    add_compile_definitions(HAVE_WINSPARKLE)
+    add_library(winsparkle_lib SHARED IMPORTED GLOBAL)
+    set_target_properties(winsparkle_lib PROPERTIES
+        IMPORTED_IMPLIB "${WINSPARKLE_LOCAL_DIR}/x64/Release/WinSparkle.lib"
+        IMPORTED_LOCATION "${WINSPARKLE_LOCAL_DIR}/x64/Release/WinSparkle.dll"
+        INTERFACE_INCLUDE_DIRECTORIES "${WINSPARKLE_LOCAL_DIR}/include"
+    )
+else()
+    message(WARNING "WinSparkle not available — auto-update disabled")
+    add_library(winsparkle_lib INTERFACE)
+endif()
 
 # Add config include directory for generated version.h
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
@@ -90,11 +110,13 @@ target_link_libraries(VoiceStickApp PRIVATE
     advapi32
 )
 
-add_custom_command(TARGET VoiceStickApp POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_PROPERTY:winsparkle_lib,IMPORTED_LOCATION>"
-        "$<TARGET_FILE_DIR:VoiceStickApp>"
-)
+if(HAVE_WINSPARKLE)
+    add_custom_command(TARGET VoiceStickApp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_PROPERTY:winsparkle_lib,IMPORTED_LOCATION>"
+            "$<TARGET_FILE_DIR:VoiceStickApp>"
+    )
+endif()
 
 add_executable(voicestick_windows_tests
     tests/core_tests.cc

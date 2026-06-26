@@ -1,9 +1,0 @@
-
-
-# Load bootloader symbols
-set confirm off
-    add-symbol-file D:/WAN/yuyinzhushou/firmware/build/bootloader/bootloader.elf
-set confirm on
-
-# Load application symbols
-file D:/WAN/yuyinzhushou/firmware/build/atoms3_voicestick.elf
