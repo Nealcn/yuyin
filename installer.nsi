@@ -1,7 +1,7 @@
 ; VoiceStick NSIS Installer
-!define PRODUCT_NAME "VoiceStick"
+!define PRODUCT_NAME "VoiceCube"
 !define PRODUCT_VERSION "1.0.0"
-!define PRODUCT_PUBLISHER "VoiceStick"
+!define PRODUCT_PUBLISHER "VoiceCube"
 
 Name "${PRODUCT_NAME}"
 OutFile "dist\${PRODUCT_NAME}_Setup.exe"

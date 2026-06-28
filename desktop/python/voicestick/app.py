@@ -139,7 +139,7 @@ class VoiceStickApp:
         icon = self._make_icon()
         self._tray = QSystemTrayIcon(icon, self._qapp.activeWindow())
         self._tray.setContextMenu(self._tray_menu)
-        self._tray.setToolTip("VoiceStick")
+        self._tray.setToolTip("Voice Cube")
         self._tray.activated.connect(self._on_tray_activated)
         self._tray.show()
 
@@ -227,7 +227,7 @@ class VoiceStickApp:
 
     def _on_status(self, status: str):
         self._status_action.setText(f"状态: {status}")
-        self._tray.setToolTip(f"VoiceStick — {status}")
+        self._tray.setToolTip(f"Voice Cube — {status}")
         self._floatball.set_status(status)
 
     def _on_partial_text(self, text: str):
@@ -275,18 +275,18 @@ class VoiceStickApp:
     def _on_ble_disconnected(self):
         self._status_action.setText("状态: 已断开（重连中…）")
         self._floatball.set_connected(False)
-        # 自动重连
+        # 立即重连（跳过 3 秒扫描，直接用上次地址直连）
         asyncio.run_coroutine_threadsafe(self._auto_reconnect(), self._loop)
 
     async def _auto_reconnect(self):
-        """断连后自动重连"""
-        await asyncio.sleep(0.5)
-        if self._ble.is_connected:
-            return
+        """断连后自动直连（不扫描，省 3 秒）"""
+        if self._ble._last_address:
+            await self._ble.connect(self._ble._last_address, self._ble._device_name)
+            if self._ble.is_connected:
+                return
+        # 直连失败，回退到扫描
         if self._config.paired_device_ids:
             await self._scan_and_connect()
-        elif self._ble._last_address:
-            await self._ble.connect(self._ble._last_address, self._ble._device_name)
 
     async def _scan_and_connect(self):
         """扫描并连接第一个已配对设备（跳过已连接状态）"""

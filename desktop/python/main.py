@@ -35,7 +35,7 @@ def main():
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
 
     app = QApplication(sys.argv)
-    app.setApplicationName("VoiceStick")
+    app.setApplicationName("Voice Cube")
     app.setQuitOnLastWindowClosed(False)  # 托盘常驻
 
     # 设置中文字体

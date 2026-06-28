@@ -46,4 +46,4 @@
 //#define BOARD_PDM_CLK_DIV       80
 
 // --- BLE Configuration ---
-#define BOARD_BLE_DEVICE_PREFIX "VS-"        // Must match voicestick prefix
+#define BOARD_BLE_DEVICE_PREFIX "VC-"        // Voice Cube BLE prefix

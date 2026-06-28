@@ -5,7 +5,7 @@ import sys
 import shutil
 import subprocess
 
-APP_NAME = "VoiceStick"
+APP_NAME = "VoiceCube"
 SCRIPT = os.path.join(os.path.dirname(__file__), "desktop", "python", "main.py")
 DIST_DIR = os.path.join(os.path.dirname(__file__), "dist")
 BUILD_DIR = os.path.join(os.path.dirname(__file__), "build", "pyinstaller")
