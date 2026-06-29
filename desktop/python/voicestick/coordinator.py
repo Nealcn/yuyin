@@ -35,11 +35,16 @@ class Coordinator:
         self._polish_enabled = False
         self._polish_prompt = ""
         self._polish_before_translate = True
+        self._stream_finished = False
+        self._session_ready = asyncio.Event()
 
         # 配置
         self.paste_on_final = True
         self.press_enter_after_paste = False
         self.asr_server_url = "ws://localhost:8080"
+
+        # BLE 心跳保活：每 20 秒发一个空控制包防止空闲断连
+        self._keepalive_task = None
 
         # 注册 BLE 回调
         self._ble.on_audio_frame = self._on_audio_frame
@@ -55,14 +60,21 @@ class Coordinator:
     async def start(self):
         """启动协调器"""
         self._set_status("就绪")
-        # ASR 连接在后台进行，不阻塞
-        asyncio.create_task(self._connect_asr())
+        # 流式模式下 ASR 会话在按键时创建，无需提前连接
 
-    async def _connect_asr(self):
-        """后台连接 ASR"""
-        ok = await self._asr.start()
-        if not ok:
-            self._set_status("ASR 未连接")
+    def _start_keepalive(self):
+        self._stop_keepalive()
+        async def _ping():
+            while self._ble.is_connected:
+                await asyncio.sleep(20)
+                if self._ble.is_connected and not self._recording:
+                    await self._ble.send_control(b'{"event":"ping"}')
+        self._keepalive_task = asyncio.create_task(_ping())
+
+    def _stop_keepalive(self):
+        if self._keepalive_task:
+            self._keepalive_task.cancel()
+            self._keepalive_task = None
 
     def configure_translation(self, enabled: bool, api_key: str, base_url: str,
                                model: str, target_language: str):
@@ -89,15 +101,18 @@ class Coordinator:
     # ---- BLE 回调 ----
 
     def _on_ble_connected(self):
+        self._recording = False  # 重连后清除录音标记
         self._set_status("已连接")
         if self.on_device_connected:
             self.on_device_connected(self._ble.device_name)
+        self._start_keepalive()
 
     def _on_ble_disconnected(self):
         self._recording = False
         self._set_status("已断开")
         if self.on_device_disconnected:
             self.on_device_disconnected()
+        self._stop_keepalive()
 
     def _on_state_event(self, event: StateEvent):
         logger.debug("状态事件: %s", event)
@@ -110,26 +125,44 @@ class Coordinator:
         """按下：开始录音 + 启动 ASR 流式会话"""
         if event.button == "primary" and not self._recording:
             self._recording = True
+            self._rec_start = asyncio.get_event_loop().time()
             self._session_id = event.session_id
             self._set_status("录音中…")
+            self._audio_queue = asyncio.Queue()
             asyncio.create_task(self._stream_start())
+        elif event.button == "primary":
+            logger.warning("⚠️ button_down ignored: _recording=%s", self._recording)
+            # 卡死保护：如果 _recording 卡 True 超过 30 秒，强制复位
+            if self._recording and hasattr(self, '_rec_start'):
+                if (asyncio.get_event_loop().time() - self._rec_start) > 30:
+                    logger.warning("⚠️ _recording 卡 True 超过 30s，强制复位")
+                    self._recording = False
 
     async def _stream_start(self):
         """启动 ASR 会话（流式模式下在录音开始时即创建）"""
-        self._audio_queue = asyncio.Queue()
-        ok = await self._asr.start_session()
-        if not ok:
+        self._stream_finished = False
+        self._session_ready = asyncio.Event()
+        try:
+            ok = await self._asr.start_session()
+            if not ok:
+                self._set_status("ASR 会话失败")
+                return
+            self._session_ready.set()
+            asyncio.create_task(self._stream_send_loop())
+        except Exception as e:
+            logger.error("stream_start 异常: %s", e)
             self._set_status("ASR 会话失败")
-            self._recording = False
-            self._audio_queue = None
-            return
-        # 启动队列消费者（顺序发送，不会乱序）
-        asyncio.create_task(self._stream_send_loop())
+        finally:
+            if not self._session_ready.is_set():
+                self._recording = False
+                self._audio_queue = None
 
     def _handle_button_up(self, event: StateEvent):
-        # button_up 仅用于更新 session_id
-        if event.session_id is not None:
-            self._session_id = event.session_id
+        # button_up = 用户松开按钮，流式录音结束
+        if self._recording:
+            self._recording = False
+            logger.info("收到 button_up，触发流结束")
+            asyncio.create_task(self._stream_finish())
 
     def _on_audio_frame(self, frame: AudioFrame):
         # Accept frame if session matches, or if no session set yet
@@ -140,12 +173,11 @@ class Coordinator:
             logger.info("从音频帧设置 session_id=%d", self._session_id)
 
         if frame.is_end():
+            logger.info("收到结束帧")
             self._recording = False
-            logger.info("收到结束帧，发送 is_last 并等待 ASR 最终结果")
-            # 发送最后一帧（is_last=True）触发服务端结束识别
             asyncio.create_task(self._stream_finish())
         else:
-            # 入队等待顺序发送（不直接 create_task，避免乱序）
+            # 入队等待顺序发送
             if self._audio_queue is not None:
                 self._audio_queue.put_nowait(frame.payload)
 
@@ -161,13 +193,20 @@ class Coordinator:
             await self._asr.send_audio(chunk, is_last=False)
 
     async def _stream_finish(self):
-        """发送结束帧 + 等待 ASR 最终结果"""
+        """发送结束帧 + 等待 ASR 最终结果（可被 END 帧或 button_up 触发，防重复）"""
+        if self._stream_finished:
+            return
+        self._stream_finished = True
+        # 等 ASR 会话就绪（防短按时 _stream_start 尚未完成）
+        if hasattr(self, '_session_ready'):
+            await asyncio.wait_for(self._session_ready.wait(), timeout=3.0)
         # 发哨兵等队列消费者结束
         if self._audio_queue is not None:
             self._audio_queue.put_nowait(None)
             self._audio_queue = None
-        await self._asr.send_audio(b"", is_last=True)
-        await self._asr.stop_session()
+        if self._asr._ws and not self._asr._ws.closed:
+            await self._asr.send_audio(b"", is_last=True)
+            await self._asr.stop_session()
 
     # _process_audio 已移除 — 改用流式发送 (_stream_start / _stream_finish)
 

@@ -45,7 +45,7 @@ class BleClient:
         return self._device_name
 
     async def scan(self, timeout: float = 5.0) -> list[dict]:
-        """扫描 VS- 开头的设备"""
+        """扫描 BLE 设备，返回全部结果（配对对话框自行过滤）"""
         devices = []
         scanner = BleakScanner()
 
@@ -58,12 +58,13 @@ class BleClient:
         for d in discovered:
             name = d.name or ""
             rssi = getattr(d, 'rssi', 0) or 0
-            if name.startswith("VS-"):
-                devices.append({
-                    "address": d.address,
-                    "name": name,
-                    "rssi": rssi,
-                })
+            logger.debug("BLE扫描到: %s (%s) RSSI=%d", name, d.address, rssi)
+            devices.append({
+                "address": d.address,
+                "name": name,
+                "rssi": rssi,
+            })
+        logger.info("BLE扫描完成: 发现 %d 个设备", len(devices))
         return devices
 
     async def connect(self, address: str, name: str = ""):

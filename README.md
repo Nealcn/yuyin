@@ -1,4 +1,4 @@
-# M5AtomS3R Voice Stick — 蓝牙语音输入棒
+# Voice Cube — 蓝牙语音输入棒
 
 将 **M5AtomS3R AI Chatbot + Atomic Echo Base** 变成一个蓝牙 Push-to-Talk 语音输入设备，连接 Windows，**流式语音转文字**并自动粘贴到当前输入框。
 

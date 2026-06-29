@@ -49,7 +49,7 @@ class PairingDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
-        self._hint = QLabel("正在扫描 VS- 设备…")
+        self._hint = QLabel("正在扫描 Voice Cube 设备…")
         self._hint.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._hint)
 
@@ -107,9 +107,16 @@ class PairingDialog(QDialog):
             name = d.get("name", "未知") or "未知"
             addr = d.get("address", "")
             rssi = d.get("rssi", 0)
-            if name.startswith("VS-"):
+            # 调试：打印所有发现的设备
+            print(f"  [BLE扫描] {name}  {addr}  RSSI={rssi}")
+            if name.startswith("VS-") or name.startswith("VC-"):
                 item = QListWidgetItem(f"{name}  ({addr})  信号: {rssi}dBm")
                 item.setData(Qt.UserRole, (addr, name))
+                self._list.addItem(item)
+            elif not name or name == "未知":
+                # 无设备名的也显示（Windows 偶尔读不到名称）
+                item = QListWidgetItem(f"(未知)  {addr}  信号: {rssi}dBm")
+                item.setData(Qt.UserRole, (addr, addr[:8]))
                 self._list.addItem(item)
 
         if self._list.count() > 0:

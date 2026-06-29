@@ -1,4 +1,4 @@
-# Voice Stick BLE 协议 — AtomS3R 实现
+# Voice Cube BLE 协议
 
 与 [78/voicestick](https://github.com/78/voicestick/blob/main/docs/protocol.md) 协议兼容。
 

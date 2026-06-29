@@ -214,6 +214,7 @@ static void send_button_click(const char *button, uint32_t duration_ms, uint32_t
              "{\"event\":\"button_down\",\"button\":\"%s\",\"session_id\":%lu}",
              button, (unsigned long)session_id);
     ble_service_send_state(json);
+    vTaskDelay(1);
     snprintf(json, sizeof(json),
              "{\"event\":\"button_up\",\"button\":\"%s\",\"duration_ms\":%lu,\"session_id\":%lu}",
              button, (unsigned long)duration_ms, (unsigned long)session_id);

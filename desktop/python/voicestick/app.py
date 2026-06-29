@@ -31,6 +31,9 @@ class VoiceStickApp:
         self._ble = BleClient()
         self._asr = AsrClient(self._config.asr_server_url, self._config.asr_api_key)
         self._coordinator = Coordinator(self._ble, self._asr)
+        # 保存 coordinator 的 BLE 回调，避免被 app.py 覆盖后丢失
+        self._coord_on_connected = self._ble.on_connected
+        self._coord_on_disconnected = self._ble.on_disconnected
 
         # UI
         self._tray: Optional[QSystemTrayIcon] = None
@@ -170,7 +173,7 @@ class VoiceStickApp:
         if dialog.exec() and dialog.selected_address:
             addr = dialog.selected_address
             name = dialog.selected_name
-            device_id = name[3:] if name.startswith("VS-") else addr.replace(":", "")
+            device_id = name[3:] if (name.startswith("VS-") or name.startswith("VC-")) else addr.replace(":", "")
             if device_id not in self._config.paired_device_ids:
                 self._config.paired_device_ids.append(device_id)
                 self._config.save()
@@ -236,6 +239,22 @@ class VoiceStickApp:
     def _on_final_text(self, text: str):
         self._floatball.set_final_text(text)
 
+    def _on_ble_connected(self, device_name: str):
+        # 先执行 coordinator 的逻辑（重置 _recording、启动保活等）
+        if self._coord_on_connected:
+            self._coord_on_connected()
+        # 再执行 app.py 的逻辑
+        self._status_action.setText(f"已连接: {device_name}")
+        self._tray.setToolTip(f"Voice Cube — {device_name}")
+        self._floatball.set_connected(True)
+
+    def _on_ble_disconnected(self):
+        if self._coord_on_disconnected:
+            self._coord_on_disconnected()
+        self._status_action.setText("状态: 已断开（重连中…）")
+        self._floatball.set_connected(False)
+        asyncio.run_coroutine_threadsafe(self._auto_reconnect(), self._loop)
+
     def _polish_text(self, text: str):
         """同步包装：调用 LLM 润色（通过后台事件循环）"""
         import asyncio
@@ -263,20 +282,6 @@ class VoiceStickApp:
         self._config.floatball_y = y
         self._config.save()
 
-    def _on_ble_connected(self, device_name: str):
-        self._status_action.setText(f"已连接: {device_name}")
-        self._tray.setToolTip(f"VoiceStick — {device_name}")
-        self._floatball.set_connected(True)
-        # 重连后通知固件回到就绪状态
-        asyncio.run_coroutine_threadsafe(
-            self._coordinator._ble.send_ui_state("ready"), self._loop
-        )
-
-    def _on_ble_disconnected(self):
-        self._status_action.setText("状态: 已断开（重连中…）")
-        self._floatball.set_connected(False)
-        # 立即重连（跳过 3 秒扫描，直接用上次地址直连）
-        asyncio.run_coroutine_threadsafe(self._auto_reconnect(), self._loop)
 
     async def _auto_reconnect(self):
         """断连后自动直连（不扫描，省 3 秒）"""
@@ -288,15 +293,22 @@ class VoiceStickApp:
         if self._config.paired_device_ids:
             await self._scan_and_connect()
 
-    async def _scan_and_connect(self):
-        """扫描并连接第一个已配对设备（跳过已连接状态）"""
+    async def _scan_and_connect(self, retries=3):
+        """扫描并连接第一个已配对设备（扫描不到自动重试）"""
         if self._ble.is_connected:
             return
-        devices = await self._ble.scan(3.0)
         paired = set(self._config.paired_device_ids)
-        for d in devices:
-            name = d.get("name", "")
-            dev_id = name[3:] if name.startswith("VS-") else ""
-            if dev_id in paired:
-                await self._ble.connect(d["address"], name)
+        for attempt in range(retries):
+            if self._ble.is_connected:
                 return
+            devices = await self._ble.scan(3.0 if attempt == 0 else 5.0)
+            for d in devices:
+                name = d.get("name", "") or ""
+                addr = d.get("address", "")
+                dev_id = name[3:] if (name.startswith("VS-") or name.startswith("VC-")) else addr.replace(":", "")[-4:]
+                if dev_id in paired:
+                    await self._ble.connect(d["address"], name)
+                    return
+            if attempt < retries - 1:
+                logger.info("扫描未匹配到设备，%.0f 秒后重试...", 3.0)
+                await asyncio.sleep(3)

@@ -61,9 +61,14 @@ static void button_task(void *arg)
             ESP_LOGI(TAG, "PRESS_DOWN");
             if (s_cb) s_cb(BUTTON_EVENT_PRESS_DOWN, 0);
 
-            // Wait for release (poll with delay)
+            // Wait for release (poll with delay, max 60s to prevent stuck)
+            int64_t press_start = esp_timer_get_time();
             while (gpio_get_level(BOARD_BUTTON_PIN) == 0) {
                 vTaskDelay(pdMS_TO_TICKS(10));
+                if ((esp_timer_get_time() - press_start) > 60000000) { // 60s
+                    ESP_LOGW(TAG, "button held too long, forcing release");
+                    break;
+                }
             }
 
             // Button released
@@ -110,7 +115,7 @@ esp_err_t button_init(button_cb_t cb)
     s_sem = xSemaphoreCreateBinary();
     ESP_RETURN_ON_FALSE(s_sem, ESP_ERR_NO_MEM, TAG, "semaphore");
 
-    BaseType_t ok = xTaskCreate(button_task, "btn", 6144, NULL, 7, &s_task);
+    BaseType_t ok = xTaskCreate(button_task, "btn", 8192, NULL, 7, &s_task);
     ESP_RETURN_ON_FALSE(ok == pdPASS, ESP_ERR_NO_MEM, TAG, "task");
 
     return ESP_OK;

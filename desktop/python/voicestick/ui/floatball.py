@@ -60,7 +60,7 @@ class FloatingBallWindow(QWidget):
         self._edit.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._edit.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._edit.setStyleSheet(
-            "QTextEdit{background:rgba(255,255,255,0.25);"
+            "QTextEdit{background:rgba(255,255,255,0.5);"
             "color:#1a1a1a;font-size:14px;border:1px solid transparent;"
             "border-radius:8px;padding:8px 10px;}"
             "QTextEdit:focus{border-color:rgba(135,206,235,0.55);"
@@ -193,33 +193,88 @@ class FloatingBallWindow(QWidget):
         self._has_text = True
         self._edit.setText(text)
         self._edit.show()
-        # Layout: main ball top-left, text box below, side buttons on right
-        bw, bh = 48, 28   # button size
-        ml = SHADOW_R
-        mt = SHADOW_R
-        self._main.move(ml, mt)
-        # text box: below main ball
-        tx, ty = ml, mt + 56 + GAP
-        self._edit.setGeometry(tx, ty, TEXT_W, TEXT_H)
-        # buttons: in a row below the text box
-        btn_gap = 4
-        total_w = len(self._side_btns) * bw + (len(self._side_btns) - 1) * btn_gap
-        btn_start_x = tx + (TEXT_W - total_w) // 2
-        for i, b in enumerate(self._side_btns):
-            b.move(btn_start_x + i * (bw + btn_gap), ty + TEXT_H + 4)
-            b.show()
-        # window
-        w = tx + TEXT_W + SHADOW_R
-        h = ty + TEXT_H + 4 + bh + SHADOW_R
-        self.setFixedSize(w, h)
+        self._relayout()
+        self._clamp()
         self.update()
+
+    def _relayout(self):
+        """根据屏幕位置重新布局（四象限自适应）"""
+        if not self._has_text:
+            return
+        scr = self.screen().availableGeometry()
+        cx = self.x() + self.width() // 2
+        cy = self.y() + self.height() // 2
+        right = cx > scr.width() // 2
+        bottom = cy > scr.height() // 2
+
+        bw, bh = 48, 28
+        m = SHADOW_R
+        bsz = 56  # ball widget size
+
+        if right:
+            # 球在右
+            bx = m  # text left edge
+            if bottom:
+                # 右下角：球在右下，文字在球左上方
+                w = m + TEXT_W + 8 + bsz + m
+                h = m + bh + 4 + TEXT_H + 4 + bsz + m
+                self.setFixedSize(w, h)
+                self._main.move(w - m - bsz, h - m - bsz)  # bottom-right
+                tx, ty = m, m + bh + 4
+                self._edit.setGeometry(tx, ty, TEXT_W, TEXT_H)
+                # 按钮在文字上方
+                total_w = len(self._side_btns) * bw + (len(self._side_btns) - 1) * 4
+                btn_x = tx + (TEXT_W - total_w) // 2
+                for i, b in enumerate(self._side_btns):
+                    b.move(btn_x + i * (bw + 4), m)
+                    b.show()
+            else:
+                # 右上角：球在右上，文字在球左下方
+                w = m + TEXT_W + 8 + bsz + m
+                h = m + bsz + GAP + TEXT_H + 4 + bh + m
+                self.setFixedSize(w, h)
+                self._main.move(w - m - bsz, m)  # top-right
+                tx, ty = m, m + bsz + GAP
+                self._edit.setGeometry(tx, ty, TEXT_W, TEXT_H)
+                total_w = len(self._side_btns) * bw + (len(self._side_btns) - 1) * 4
+                btn_x = tx + (TEXT_W - total_w) // 2
+                for i, b in enumerate(self._side_btns):
+                    b.move(btn_x + i * (bw + 4), ty + TEXT_H + 4)
+                    b.show()
+        else:
+            # 球在左
+            if bottom:
+                # 左下角：球在左下，文字在球右上方
+                w = m + bsz + 8 + TEXT_W + m
+                h = m + bh + 4 + TEXT_H + 4 + bsz + m
+                self.setFixedSize(w, h)
+                self._main.move(m, h - m - bsz)  # bottom-left
+                tx, ty = m + bsz + 8, m + bh + 4
+                self._edit.setGeometry(tx, ty, TEXT_W, TEXT_H)
+                total_w = len(self._side_btns) * bw + (len(self._side_btns) - 1) * 4
+                btn_x = tx + (TEXT_W - total_w) // 2
+                for i, b in enumerate(self._side_btns):
+                    b.move(btn_x + i * (bw + 4), m)
+                    b.show()
+            else:
+                # 左上角：球在左上，文字在球右下方（默认）
+                w = m + bsz + 8 + TEXT_W + m
+                h = m + bsz + GAP + TEXT_H + 4 + bh + m
+                self.setFixedSize(w, h)
+                self._main.move(m, m)
+                tx, ty = m + bsz + 8, m + bsz + GAP
+                self._edit.setGeometry(tx, ty, TEXT_W, TEXT_H)
+                total_w = len(self._side_btns) * bw + (len(self._side_btns) - 1) * 4
+                btn_x = tx + (TEXT_W - total_w) // 2
+                for i, b in enumerate(self._side_btns):
+                    b.move(btn_x + i * (bw + 4), ty + TEXT_H + 4)
+                    b.show()
 
     def _init_pos(self):
         if self._saved_x > 0:
             self.move(self._saved_x, self._saved_y)
         else:
-            scr = self.screen().availableGeometry()
-            self.move(scr.width() - 200, scr.height() - 200)
+            self.move(50, 50)
         self._clamp()
 
     def _clamp(self):
@@ -243,13 +298,17 @@ class FloatingBallWindow(QWidget):
         if delta.manhattanLength() > CLICK:
             self.move(self.pos() + delta)
             self._drag_pt = e.globalPos()
+            # 拖动时实时更新布局（四象限自适应翻转）
+            if self._has_text:
+                self._relayout()
 
     def mouseReleaseEvent(self, e):
         if e.button() == Qt.LeftButton and self._drag:
             self._drag = False
             was_drag = (e.globalPos() - self._drag_pt).manhattanLength() > CLICK
-            if was_drag:
+            if was_drag and self._has_text:
                 self._clamp()
+                self._relayout()
 
     # ========== handlers ==========
 
